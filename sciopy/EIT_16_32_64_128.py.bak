@@ -55,7 +55,7 @@ class EIT_16_32_64_128:
                 f"Unallowed value: {self.n_el}. Please set 16, 32, 48 or 64 electrode mode."
             )
 
-    def connect_device_HS(self, url: str = "ftdi://ftdi:232h/1", baudrate: int = 115200):
+    def connect_device_HS(self, url: str = "ftdi://ftdi:232h/1", baudrate: int = 9000):
         """
         Connect to high speed
         """
@@ -236,111 +236,102 @@ class EIT_16_32_64_128:
         )
         self.print_msg = False
 
-    def SetMeasurementSetup(self, setup: EitMeasurementSetup, writeSetup=True):
+    def SetMeasurementSetup(self, setup: EitMeasurementSetup):
         """
         set_measurement_config sets the ScioSpec device configuration depending on the EitMeasurementSetup configuration dataclass.
         """
 
         self.setup = setup
         self.print_msg = False
-        if not writeSetup:
-            print('.setup: not writing setup to instrument')
-        else :
-            self.ResetMeasurementSetup()
-    
-            # set burst count | for 3: ["B0 03 02 00 03 B0"]
-            #self.write_command_string(
-            #    bytearray([0xB0, 0x03, 0x02, 0x00, setup.burst_count, 0xB0])
-            #)
-   
-            # Set framerate:
-            self.write_command_string(
-                bytearray(
-                    list(np.concatenate([[176, 5, 3], clTbt_sp(setup.framerate), [176]]))
-                )
-            )
+        self.ResetMeasurementSetup()
 
-            # Set frequencies:
-            # [CT] 0C 04 [fmin] [fmax] [fcount] [ftype] [CT]
-            f_min = clTbt_sp(setup.exc_freq)
-            f_max = clTbt_sp(setup.exc_freq)
-            f_count = [0, 1]
-            f_type = [0]  # linear/log
-            # bytearray
-            self.write_command_string(
-                bytearray(
-                    list(
-                        np.concatenate([[176, 12, 4], f_min, f_max, f_count, f_type, [176]])
-                    )
-                )
-            )         
-            
-            # set excitation alternating current amplitude double precision
-            # A_min = 100nA
-            # A_max = 10mA
-            if setup.amplitude > 0.01:
-                print(
-                    f"Amplitude {setup.amplitude}A is out of available range.\nSet amplitude to 10mA."
-                )
-                setup.amplitude = 0.01
-            self.write_command_string(
-                bytearray(
-                    list(np.concatenate([[176, 9, 5], clTbt_dp(setup.amplitude), [176]]))
-                )
-            )
-            # ADC range settings: [+/-1, +/-5, +/-10]
-            # ADC range = +/-1  : B0 02 0D 01 B0
-            # ADC range = +/-5  : B0 02 0D 02 B0
-            # ADC range = +/-10 : B0 02 0D 03 B0
-            if setup.adc_range == 1:
-                self.write_command_string(bytearray([0xB0, 0x02, 0x0D, 0x01, 0xB0]))
-            elif setup.adc_range == 5:
-                self.write_command_string(bytearray([0xB0, 0x02, 0x0D, 0x02, 0xB0]))
-            elif setup.adc_range == 10:
-                self.write_command_string(bytearray([0xB0, 0x02, 0x0D, 0x03, 0xB0]))
-            # Gain settings:
-            # Gain = 1     : B0 03 09 01 00 B0
-            # Gain = 10    : B0 03 09 01 01 B0
-            # Gain = 100   : B0 03 09 01 02 B0
-            # Gain = 1_000 : B0 03 09 01 03 B0
-            if setup.gain == 1:
-                self.write_command_string(bytearray([0xB0, 0x03, 0x09, 0x01, 0x00, 0xB0]))
-            elif setup.gain == 10:
-                self.write_command_string(bytearray([0xB0, 0x03, 0x09, 0x01, 0x01, 0xB0]))
-            elif setup.gain == 100:
-                self.write_command_string(bytearray([0xB0, 0x03, 0x09, 0x01, 0x02, 0xB0]))
-            elif setup.gain == 1_000:
-                self.write_command_string(bytearray([0xB0, 0x03, 0x09, 0x01, 0x03, 0xB0]))
-    
-            # Single ended mode:
-            self.write_command_string(bytearray([0xB0, 0x03, 0x08, 0x01, 0x01, 0xB0]))
-    
-            # Excitation switch type:
-            self.write_command_string(bytearray([0xB0, 0x02, 0x0C, 0x01, 0xB0]))
+        # set burst count | for 3: ["B0 03 02 00 03 B0"]
+        self.write_command_string(
+            bytearray([0xB0, 0x03, 0x02, 0x00, setup.burst_count, 0xB0])
+        )
 
-            assert setup.n_el == self.n_el, print(
-                "Number of electrodes in setup configuration must match Eit_16_32_64_128() initialization."
+        # set excitation alternating current amplitude double precision
+        # A_min = 100nA
+        # A_max = 10mA
+        if setup.amplitude > 0.01:
+            print(
+                f"Amplitude {setup.amplitude}A is out of available range.\nSet amplitude to 10mA."
             )
-            el_inj = np.arange(1, setup.n_el + 1)
-            el_gnd = np.roll(el_inj, -(setup.inj_skip + 1))
-            for v_el, g_el in zip(el_inj, el_gnd):
-                self.write_command_string(bytearray([0xB0, 0x03, 0x06, v_el, g_el, 0xB0]))
-                
-            #measurement mode , true is differential, false is single-ended
-            if setup.meas_diff : 
-                self.write_command_string(bytearray([0xB0, 0x03, 0x08, 0x02, 0x01, 0xB0]))
-            else: 
-                self.write_command_string(bytearray([0xB0, 0x03, 0x08, 0x01, 0x01, 0xB0]))
-    
-            self.print_msg = True
-            # Set output configuration - enable all
-            # |-- Excitation setting | [CT] 02 01 [enable/disable] [CT]
-            self.write_command_string(bytearray([0xB2, 0x02, 0x01, 0x01, 0xB2]))
-            # |-- Current row in the frequency stack | [CT] 02 02 [enable/disable] [CT]
-            self.write_command_string(bytearray([0xB2, 0x02, 0x02, 0x01, 0xB2]))
-            # |-- Timestamp | [CT] 02 03 [enable/disable] [CT]
-            self.write_command_string(bytearray([0xB2, 0x02, 0x03, 0x01, 0xB2]))
-            self.print_msg = False
+            setup.amplitude = 0.01
+        self.write_command_string(
+            bytearray(
+                list(np.concatenate([[176, 9, 5], clTbt_dp(setup.amplitude), [176]]))
+            )
+        )
+        # ADC range settings: [+/-1, +/-5, +/-10]
+        # ADC range = +/-1  : B0 02 0D 01 B0
+        # ADC range = +/-5  : B0 02 0D 02 B0
+        # ADC range = +/-10 : B0 02 0D 03 B0
+        if setup.adc_range == 1:
+            self.write_command_string(bytearray([0xB0, 0x02, 0x0D, 0x01, 0xB0]))
+        elif setup.adc_range == 5:
+            self.write_command_string(bytearray([0xB0, 0x02, 0x0D, 0x02, 0xB0]))
+        elif setup.adc_range == 10:
+            self.write_command_string(bytearray([0xB0, 0x02, 0x0D, 0x03, 0xB0]))
+        # Gain settings:
+        # Gain = 1     : B0 03 09 01 00 B0
+        # Gain = 10    : B0 03 09 01 01 B0
+        # Gain = 100   : B0 03 09 01 02 B0
+        # Gain = 1_000 : B0 03 09 01 03 B0
+        if setup.gain == 1:
+            self.write_command_string(bytearray([0xB0, 0x03, 0x09, 0x01, 0x00, 0xB0]))
+        elif setup.gain == 10:
+            self.write_command_string(bytearray([0xB0, 0x03, 0x09, 0x01, 0x01, 0xB0]))
+        elif setup.gain == 100:
+            self.write_command_string(bytearray([0xB0, 0x03, 0x09, 0x01, 0x02, 0xB0]))
+        elif setup.gain == 1_000:
+            self.write_command_string(bytearray([0xB0, 0x03, 0x09, 0x01, 0x03, 0xB0]))
+
+        # Single ended mode:
+        self.write_command_string(bytearray([0xB0, 0x03, 0x08, 0x01, 0x01, 0xB0]))
+
+        # Excitation switch type:
+        self.write_command_string(bytearray([0xB0, 0x02, 0x0C, 0x01, 0xB0]))
+
+        # Set framerate:
+        self.write_command_string(
+            bytearray(
+                list(np.concatenate([[176, 5, 3], clTbt_sp(setup.framerate), [176]]))
+            )
+        )
+        # Set frequencies:
+        # [CT] 0C 04 [fmin] [fmax] [fcount] [ftype] [CT]
+        f_min = clTbt_sp(setup.exc_freq)
+        f_max = clTbt_sp(setup.exc_freq)
+        f_count = [0, 1]
+        f_type = [0]  # linear/log
+        # bytearray
+        self.write_command_string(
+            bytearray(
+                list(
+                    np.concatenate([[176, 12, 4], f_min, f_max, f_count, f_type, [176]])
+                )
+            )
+        )
+
+        # Set injection config
+        assert setup.n_el == self.n_el, print(
+            "Number of electrodes in setup configuration must match Eit_16_32_64_128() initialization."
+        )
+        el_inj = np.arange(1, setup.n_el + 1)
+        el_gnd = np.roll(el_inj, -(setup.inj_skip + 1))
+        for v_el, g_el in zip(el_inj, el_gnd):
+            self.write_command_string(bytearray([0xB0, 0x03, 0x06, v_el, g_el, 0xB0]))
+
+        self.print_msg = True
+        # Set output configuration - enable all
+        # |-- Excitation setting | [CT] 02 01 [enable/disable] [CT]
+        self.write_command_string(bytearray([0xB2, 0x02, 0x01, 0x01, 0xB2]))
+        # |-- Current row in the frequency stack | [CT] 02 02 [enable/disable] [CT]
+        self.write_command_string(bytearray([0xB2, 0x02, 0x02, 0x01, 0xB2]))
+        # |-- Timestamp | [CT] 02 03 [enable/disable] [CT]
+        self.write_command_string(bytearray([0xB2, 0x02, 0x03, 0x01, 0xB2]))
+        self.print_msg = False
 
     def SaveSettings(self):
         print("TBD (to be checked)")
@@ -465,5 +456,3 @@ class EIT_16_32_64_128:
         # 0xC8 - Set LED Control
         # 0xC9 - Get LED Control
         # 0xCB - FrontIOs
-    def close(self):
-        self.device.close()
